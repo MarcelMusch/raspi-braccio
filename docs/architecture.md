@@ -1,89 +1,155 @@
 # System Architecture
 
 ## Overview
-High-level control on Raspberry Pi, real-time actuation on Arduino.
 
-## Components
-- PC (development)
-- Raspberry Pi (C# control)
-- Arduino (servo controller)
-- Braccio arm
+This project implements a distributed control architecture for the Arduino TinkerKit Braccio
+robotic arm. The system is designed around a clear separation between high-level control logic
+and deterministic low-level actuation.
 
-## Responsibilities
-| Component | Responsibility |
-|---------|---------------|
-| Pi | State machine, sequencing |
-| Arduino | PWM, timing, limits |
+A Raspberry Pi is used as the main control unit, executing motion sequences, state machines,
+and optional vision processing. An Arduino acts as a dedicated real-time controller responsible
+for servo timing, motion interpolation, and safety constraints.
+
+The architecture avoids proprietary robot simulation or offline programming software and
+focuses on direct, transparent control of the hardware.
+
+---
+
+## Architecture Diagram
+
+```
+PC (Development)
+|
+| SSH / SCP
+|
+Raspberry Pi
+|
+| USB Serial
+|
+Arduino UNO
+|
+| PWM
+|
+Braccio Servos
+```
+
+---
+
+## Components and Responsibilities
+
+### PC (Development Environment)
+
+The PC is used exclusively for development purposes and is not part of the runtime system.
+
+Responsibilities:
+- Source code development
+- Version control
+- Deployment to the Raspberry Pi
+- Remote debugging and monitoring
+
+---
+
+### Raspberry Pi
+
+The Raspberry Pi serves as the high-level controller of the robotic system.
+
+Responsibilities:
+- Execution of high-level motion sequences
+- Implementation of state machines (e.g. idle, moving, error)
+- Management of communication with the Arduino
+- Optional processing of camera input for vision-based extensions
+- Logging and diagnostics
+
+The Raspberry Pi runs a Linux-based operating system and is not required to meet real-time
+constraints.
+
+---
+
+### Arduino
+
+The Arduino functions as a dedicated real-time motion controller.
+
+Responsibilities:
+- Deterministic generation of PWM signals for servo control
+- Interpolation of joint movements over time
+- Enforcement of joint limits and safety constraints
+- Parsing and validation of commands received from the Raspberry Pi
+- Reporting of execution status and errors
+
+The Arduino operates without an operating system and provides predictable timing behavior.
+
+---
+
+### Braccio Robotic Arm
+
+The Braccio robotic arm consists of six servo-driven joints and a gripper.
+
+Characteristics:
+- Open-loop position control using hobby servos
+- Limited payload and positioning accuracy
+- Mechanical backlash and compliance inherent to the design
+
+These characteristics are explicitly accounted for in the system design.
+
+---
+
+## Communication Paths
+
+### PC ↔ Raspberry Pi
+
+- Medium: Ethernet (LAN or WLAN)
+- Protocols: SSH, SCP
+- Purpose: Development, deployment, and system monitoring
+
+---
+
+### Raspberry Pi ↔ Arduino
+
+- Medium: USB serial (CDC ACM)
+- Communication style: Command-response
+- Protocol: Text-based, human-readable command format
+
+This link represents the primary control interface of the system.
+
+---
+
+### Arduino ↔ Braccio Servos
+
+- Medium: Direct PWM signals via the Braccio shield
+- Timing: Deterministic, hardware-controlled
+
+No feedback from the servos is assumed.
+
+---
 
 ## Design Decisions
-- Why USB serial
-- Why Arduino for servos
-- Why no real-time OS on Pi
 
-## Project Goal and Scope
+### Separation of Control Layers
 
-### Goal
-
-The goal of this project is to build a fully functional robotic arm control system based on
-a Raspberry Pi and an Arduino-controlled TinkerKit Braccio robotic arm.
-
-The system shall be capable of reliably transferring parts between predefined positions.
-All robot movements are executed through direct control of the hardware, without relying
-on proprietary robot simulation or offline programming software.
-
-The focus is on achieving a stable, understandable, and reproducible control setup rather
-than maximum speed or payload.
+High-level planning and sequencing are separated from low-level actuation to ensure
+deterministic servo control while maintaining flexibility in the control logic.
 
 ---
 
-### Scope
+### Use of USB Serial Communication
 
-The scope of the project includes:
-
-- Direct control of the Arduino TinkerKit Braccio robotic arm
-- High-level motion sequencing implemented on a Raspberry Pi
-- Deterministic real-time servo control handled by an Arduino
-- Transfer of parts between fixed, predefined pick and place positions
-- A clearly defined and documented communication protocol between Raspberry Pi and Arduino
-
-Optional (out of scope for the MVP, but planned as an extension):
-
-- Integration of a USB camera
-- Vision-based object detection and position correction
-- Vision-assisted pick-and-place operations
+USB serial communication was chosen for its simplicity, robustness, and native support on
+both the Raspberry Pi and the Arduino.
 
 ---
 
-### Out of Scope
+### Exclusion of Proprietary Simulation Software
 
-The following items are explicitly out of scope for this project:
-
-- Use of RoboDK or other proprietary robot simulation software
-- Closed-loop joint control using encoders
-- Force or torque feedback
-- Dynamic obstacle avoidance
-- High-speed or high-precision industrial motion control
+No proprietary robot simulation or offline programming tools are used.
+All motion control is performed directly on the target hardware.
 
 ---
 
-### Minimum Viable Product (MVP)
+## Acceptance Criteria
 
-The Minimum Viable Product is defined as:
+The architecture is considered complete when:
 
-- The robotic arm can be powered on and safely initialized
-- The Raspberry Pi can send motion commands to the Arduino via USB serial
-- The Arduino executes interpolated joint movements within defined safety limits
-- The robot can repeatedly pick up a part from a fixed pick position
-- The robot can place the part at a fixed place position
-- The system operates reliably without manual intervention during a transfer cycle
-
----
-
-### Acceptance Criteria
-
-The project goal is considered fulfilled when:
-
-- The robotic arm successfully transfers parts between predefined positions
-- Movements are repeatable and do not cause mechanical collisions
-- Communication between Raspberry Pi and Arduino is stable and well-documented
-- All design decisions and system boundaries are documented in this repository
+- A clear and documented system architecture is available
+- Responsibilities of Raspberry Pi and Arduino are clearly defined
+- Communication paths between all system components are specified
+- The architecture supports the defined project goal and MVP
