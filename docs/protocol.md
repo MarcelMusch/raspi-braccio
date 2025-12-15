@@ -10,7 +10,7 @@ J1=90 J2=45 J3=30 J4=0 J5=0 J6=20
 ## Responses
 - ACK
 - NACK
-- ERR:<code>
+- ERR
 
 ## Error Handling
 - Timeout
