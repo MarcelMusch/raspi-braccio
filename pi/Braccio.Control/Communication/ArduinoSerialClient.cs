@@ -2,7 +2,7 @@ using System.IO.Ports;
 
 namespace Braccio.Control.Communication;
 
-public sealed class ArduinoSerialClient : IDisposable
+public sealed class ArduinoSerialClient : IArduinoClient
 {
     private readonly SerialPort _port;
 
