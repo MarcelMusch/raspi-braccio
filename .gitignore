@@ -416,3 +416,35 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# =========================
+# Arduino specific
+# =========================
+*.elf
+*.hex
+*.map
+*.lst
+.build/
+.arduino/
+
+# =========================
+# Raspberry Pi runtime
+# =========================
+*.pid
+*.tmp
+
+# =========================
+# Camera / Vision output
+# =========================
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.avi
+
+# =========================
+# Local config
+# =========================
+config.local.json
+settings.local.json
+
