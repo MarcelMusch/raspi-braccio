@@ -73,12 +73,14 @@ Optional components:
 ---
 
 ## Repository Structure
+```
 raspi-braccio/
 ├─ arduino/ # Arduino firmware (servo control and protocol handling)
 ├─ pi/ # C# control application running on the Raspberry Pi
 ├─ docs/ # Architecture, protocol, and setup documentation
 ├─ tools/ # Helper scripts and utilities
 └─ README.md
+```
 
 ---
 
