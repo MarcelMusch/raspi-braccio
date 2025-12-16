@@ -26,7 +26,7 @@ Raspberry Pi
 |
 | USB Serial
 |
-Arduino UNO
+Arduino UNO-compatible (ATmega328P)
 |
 | PWM
 |
