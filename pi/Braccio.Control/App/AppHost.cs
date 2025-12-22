@@ -1,61 +1,35 @@
 using System;
 using System.Threading;
 using Braccio.Control.Communication;
+using Microsoft.Extensions.Configuration;
 
 namespace Braccio.Control.App
 {
     public class AppHost
     {
+        private readonly object _serialSync = new();
+
         private enum State
         {
             Idle,
             Moving,
             Error,
             Homing,
-            Shutdown
+            Shutdown,
+            Starting
         }
 
         // Current state of the application: Start with Homing
-        private State _currentState = State.Homing;
+        private State _currentState = State.Starting;
         private readonly IArduinoClient _arduino;
+        private readonly IConfiguration _configuration;
 
-        public AppHost()
+        public AppHost(IConfiguration configuration)
         {
-            _arduino = new ArduinoSerialClient("/dev/ttyUSB0", 115200);
-        }
-
-        public void Run()
-        {
-            Console.WriteLine("AppHost running. Press Ctrl+C to exit.");
-
-            _arduino.Open();
-
-            // Wait for the robot to signal readiness
-            WaitForRobotReady();
-
-            while (true)
-            {
-                switch (_currentState)
-                {
-                    case State.Idle:
-                        HandleIdleState();
-                        break;
-                    case State.Moving:
-                        HandleMovingState();
-                        break;
-                    case State.Error:
-                        HandleErrorState();
-                        break;
-                    case State.Homing:
-                        HandleHomingState();
-                        break;
-                    case State.Shutdown:
-                        HandleShutdownState();
-                        return;
-                }
-
-                Thread.Sleep(100); // Prevent busy-waiting
-            }
+            _configuration = configuration;
+            var port = _configuration["ArduinoPort"] ?? "/dev/ttyUSB0";
+            var baudRate = int.TryParse(_configuration["ArduinoBaudRate"], out var rate) ? rate : 115200;
+            _arduino = new ArduinoSerialClient(port, baudRate);
         }
 
         private static string TrimResponse(string response)
@@ -67,119 +41,230 @@ namespace Braccio.Control.App
         {
             Console.WriteLine("Waiting for robot to be ready...");
 
+            var response = AwaitResponse(
+                match: line => line == "BRACCIO_READY" || line.StartsWith("ERR"),
+                timeoutMilliseconds: 20000
+            );
+
+            if (response.StartsWith("ERR"))
+                throw new Exception($"Home failed: {response}");
+
+        }
+
+        private string AwaitResponse(Func<string, bool> match, int timeoutMilliseconds = 2000, Action<string>? onIgnoredLine = null)
+        {
+            var start = DateTime.UtcNow;
+
+            while ((DateTime.UtcNow - start).TotalMilliseconds < timeoutMilliseconds)
+            {
+                var line = _arduino.TryReadLine();
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    Thread.Sleep(5);
+                    continue;
+                }
+
+                line = TrimResponse(line);
+
+                if (match(line))
+                    return line;
+
+                onIgnoredLine?.Invoke(line);
+                // otherwise ignore and keep reading
+            }
+
+            throw new TimeoutException("Timeout waiting for matching serial response.");
+        }
+
+        public void InitializeRobot()
+        {
+            Console.WriteLine("Initializing robot...");
+
+            try
+            {
+                _arduino.Open();
+                WaitForRobotReady();
+                SendHomeCommand();
+                Console.WriteLine("Robot initialized and homed successfully.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to initialize robot: {ex.Message}");
+                throw;
+            }
+        }
+
+        public void Run()
+        {
+            Console.WriteLine("AppHost running. Waiting for API calls...");
+
+            // Keep the application alive to handle REST API calls
             while (true)
             {
-                var response = _arduino.TryReadLine();
-
-                if (response != null && TrimResponse(response) == "BRACCIO_READY")
-                {
-                    Console.WriteLine("Robot is ready.");
-                    break;
-                }
-
-                Console.WriteLine("Still waiting for robot... Retrying in 1 second.");
-                Thread.Sleep(1000);
+                Thread.Sleep(1000); // Prevent busy-waiting
             }
         }
 
-        private string? AwaitResponse(int timeoutMilliseconds = 10000)
+        public string GetStateString()
         {
-            var startTime = DateTime.Now;
-
-            while ((DateTime.Now - startTime).TotalMilliseconds < timeoutMilliseconds)
-            {
-                var response = _arduino.TryReadLine();
-                if (!string.IsNullOrEmpty(response))
-                {
-                    return TrimResponse(response);
-                }
-
-                Thread.Sleep(100); // Avoid busy-waiting
-            }
-
-            Console.WriteLine("AwaitResponse: Timeout waiting for response.");
-            return null;
+            return _currentState.ToString().ToUpper();
         }
 
-        private void HandleIdleState()
+        public string StopRobot()
         {
-            Console.WriteLine("State: Idle");
-            Console.WriteLine("Sending PING...");
-            _arduino.SendLine("PING");
+            _arduino.SendLine("STOP");
+            _currentState = State.Idle;
 
-            var response = AwaitResponse();
-            if (response == "ACK:PING")
-            {
-                Console.WriteLine("PING successful. Transitioning to Moving state.");
-                _currentState = State.Moving;
-            }
-            else
-            {
-                Console.WriteLine("No response or error. Transitioning to Error state.");
-                _currentState = State.Error;
-            }
+            var response = AwaitResponse(
+                match: line => line == "OK" || line.StartsWith("ERR"),
+                timeoutMilliseconds: 5000
+            );
+
+            if (response.StartsWith("ERR"))
+                throw new Exception($"Home failed: {response}");
+
+            return TrimResponse(response) ?? "No response";
         }
 
-        private void HandleMovingState()
+        public string Reset()
         {
-            Console.WriteLine("State: Moving");
-            _arduino.SendLine("MOVE J1=90 J2=45 J3=30 J4=0 J5=0 J6=20");
-
-            var response = AwaitResponse();
-            if (response == "OK")
+            // we read multiple lines to clear any buffered messages
+            for (int i = 0; i < 10; i++)
             {
-                Console.WriteLine("Move successful. Returning to Idle state.");
-                _currentState = State.Idle;
+                Thread.Sleep(10);
+                _arduino.TryReadLine();
             }
-            else
-            {
-                Console.WriteLine("Move failed. Transitioning to Error state.");
-                _currentState = State.Error;
-            }
-        }
 
-        private void HandleErrorState()
-        {
-            Console.WriteLine("State: Error");
-            Console.WriteLine("Resetting error...");
             _arduino.SendLine("RESET");
 
-            var response = AwaitResponse();
-            if (response == "OK")
+            var response = AwaitResponse(
+                        match: line => line == "OK" || line.StartsWith("ERR"),
+                        timeoutMilliseconds: 5000
+                    );
+
+            if (response.StartsWith("ERR"))
+                throw new Exception($"Home failed: {response}");
+
+
+            _currentState = State.Idle;
+            return TrimResponse(response) ?? "No response";
+        }
+
+        public string SendSetJointPosCommand(string JointComposition, int stepDelay, int j1, int j2, int j3, int j4, int j5, int j6)
+        {
+            _currentState = State.Moving;
+            _arduino.SendLine($"SET_JOINTS JC={JointComposition} T={stepDelay} J1={j1} J2={j2} J3={j3} J4={j4} J5={j5} J6={j6}");
+            var response = AwaitResponse(
+                        match: line => line == "OK" || line.StartsWith("ERR"),
+                        timeoutMilliseconds: 20000
+                    );
+
+            if (response.StartsWith("ERR"))
+                throw new Exception($"Home failed: {response}");
+
+            _currentState = State.Idle;
+            return TrimResponse(response) ?? "No response";
+        }
+
+        // Update GetCurrentPosition to return an object with joint positions
+        public (int J1, int J2, int J3, int J4, int J5, int J6) GetCurrentPosition()
+        {
+            lock (_serialSync)
             {
-                Console.WriteLine("Error cleared. Returning to Idle state.");
-                _currentState = State.Idle;
-            }
-            else
-            {
-                Console.WriteLine("Error reset failed. Remaining in Error state.");
+                _arduino.SendLine("GET_CURRENT_POSITION");
+
+                var response = AwaitResponse(
+                    match: line => line.StartsWith("CP "),   // or StartsWith("CP")
+                    timeoutMilliseconds: 2000
+                );
+
+                return ParseCp(TrimResponse(response));
             }
         }
 
-        private void HandleHomingState()
+        private (int J1, int J2, int J3, int J4, int J5, int J6) ParseCp(string response)
         {
-            Console.WriteLine("State: Homing");
+            if (string.IsNullOrWhiteSpace(response))
+                throw new Exception("Empty response from Arduino.");
+
+            // Example expected:
+            // CP J1=90 J2=45 J3=120 J4=80 J5=10 J6=30
+            var parts = response.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length < 7 || parts[0] != "CP")
+                throw new Exception($"Invalid CP response: '{response}'");
+
+            int ReadJoint(string part)
+            {
+                var kv = part.Split('=');
+                if (kv.Length != 2 || !int.TryParse(kv[1], out var value))
+                    throw new Exception($"Invalid joint value: '{part}'");
+
+                return value;
+            }
+
+            return (
+                ReadJoint(parts[1]), // J1
+                ReadJoint(parts[2]), // J2
+                ReadJoint(parts[3]), // J3
+                ReadJoint(parts[4]), // J4
+                ReadJoint(parts[5]), // J5
+                ReadJoint(parts[6])  // J6
+            );
+        }
+
+
+        public string SendHomeCommand()
+        {
+            _currentState = State.Homing;
             _arduino.SendLine("HOME");
 
-            var response = AwaitResponse();
-            if (response == "OK")
-            {
-                Console.WriteLine("Homing successful. Returning to Idle state.");
-                _currentState = State.Idle;
-            }
-            else
-            {
-                Console.WriteLine("Homing failed. Transitioning to Error state.");
-                _currentState = State.Error;
-            }
+            var response = AwaitResponse(
+                        match: line => line == "OK" || line.StartsWith("ERR"),
+                        timeoutMilliseconds: 5000
+                    );
+
+            if (response.StartsWith("ERR"))
+                throw new Exception($"Home failed: {response}");
+
+            _currentState = State.Idle;
+            return TrimResponse(response) ?? "No response";
         }
 
-        private void HandleShutdownState()
+        public string Wave()
         {
-            Console.WriteLine("State: Shutdown");
-            // Example: Perform cleanup
-            _arduino.Dispose();
-            Console.WriteLine("System shut down.");
+            _currentState = State.Moving;
+            Console.WriteLine("Emulating wave motion...");
+
+            try
+            {
+                // Move to initial position
+                if (SendHomeCommand() != "OK")
+                    throw new Exception("Failed to home the robot before waving.");
+
+                // Perform waving motion
+                for (int i = 0; i < 3; i++)
+                {
+                    if (SendSetJointPosCommand("111111", 10, 95, 90, 90, 0, 0, 40) != "OK")
+                        throw new Exception("Failed to send wave move command.");
+                    Thread.Sleep(500);
+                    if (SendSetJointPosCommand("111111", 10, 95, 90, 90, 0, 50, 40) != "OK")
+                        throw new Exception("Failed to send wave move command.");
+                    Thread.Sleep(500);
+                }
+
+                Console.WriteLine("Wave motion completed.");
+                SendHomeCommand();
+                _currentState = State.Idle;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to emulate wave motion: {ex.Message}");
+                _currentState = State.Error;
+                return $"Error: {ex.Message}";
+            }
+            return "Wave command executed.";
         }
     }
+
 }

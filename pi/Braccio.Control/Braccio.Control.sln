@@ -1,0 +1,24 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Braccio.Control", "Braccio.Control.csproj", "{05DEDA0D-E97C-D0E1-28AB-FD5F85C39630}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{05DEDA0D-E97C-D0E1-28AB-FD5F85C39630}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{05DEDA0D-E97C-D0E1-28AB-FD5F85C39630}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{05DEDA0D-E97C-D0E1-28AB-FD5F85C39630}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{05DEDA0D-E97C-D0E1-28AB-FD5F85C39630}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B4DFDC66-6574-4DD0-89D2-BA0037864B85}
+	EndGlobalSection
+EndGlobal
